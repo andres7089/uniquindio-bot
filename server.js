@@ -1,52 +1,96 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-const axios = require("axios");
-const cheerio = require("cheerio");
+import express from "express";
+import axios from "axios";
+import * as cheerio from "cheerio";
 
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 
-// Función para extraer fechas desde la web
+// --- Función para obtener fechas desde la página de Uniquindío ---
 async function obtenerFechas() {
-  const url = "https://www.uniquindio.edu.co/actividades-por-subcategoria/4/consulta/";
-
   try {
+    const url = "https://www.uniquindio.edu.co/actividades-por-subcategoria/4/consulta/";
     const { data } = await axios.get(url);
     const $ = cheerio.load(data);
+
     const fechas = [];
 
-    // Aquí depende de cómo esté el HTML de esa página.
-    // Por ejemplo, si las fechas están dentro de etiquetas <span class="fecha">:
-    $("span, p, div").each((i, el) => {
-      const texto = $(el).text();
-      const regexFecha = /\b\d{1,2}\/\d{1,2}\/\d{4}\b/g; // busca fechas como 21/10/2025
-      const encontradas = texto.match(regexFecha);
-      if (encontradas) {
-        fechas.push(...encontradas);
+    // Buscar textos que tengan formato de fecha como dd/mm/yyyy o similar
+    const regexFecha =
+      /(\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b|\b\d{1,2}\s+de\s+[A-Za-záéíóúÁÉÍÓÚ]+\s+de\s+\d{4}\b)/g;
+
+    $("body *").each((i, el) => {
+      const texto = $(el).text().trim();
+      const coincidencias = texto.match(regexFecha);
+      if (coincidencias) {
+        coincidencias.forEach((f) => fechas.push(f));
       }
     });
 
-    return fechas.length ? fechas : ["No se encontraron fechas en la página."];
+    // Eliminar duplicados
+    return [...new Set(fechas)];
   } catch (error) {
-    console.error("Error al obtener fechas:", error.message);
-    return ["Error al acceder al sitio web."];
+    console.error("Error obteniendo fechas:", error.message);
+    return [];
   }
 }
 
-// Endpoint para Dialogflow
+// --- Webhook principal ---
 app.post("/webhook", async (req, res) => {
-  const intentName = req.body.queryResult.intent.displayName;
+  try {
+    console.log("Solicitud recibida:", JSON.stringify(req.body, null, 2));
 
- if ( intentName === "fechas_importantes" ||intentName === "fechas importantes" ||intentName === "fechas" ) {
-    const fechas = await obtenerFechas();
+    // Detectar si viene de Dialogflow o Telegram
+    const queryResult = req.body.queryResult || {};
+    const intentName = queryResult.intent?.displayName?.toLowerCase() || "";
+    const userQuery =
+      queryResult.queryText?.toLowerCase() ||
+      req.body.message?.text?.toLowerCase() ||
+      "";
+
+    console.log("Intent recibido:", intentName);
+    console.log("Texto del usuario:", userQuery);
+
+    // Detectar palabras clave
+    const contienePalabraClave =
+      userQuery.includes("fecha") || userQuery.includes("importante");
+
+    // --- Lógica principal ---
+    if (
+      intentName === "fechas_importantes" ||
+      intentName === "fechas importantes" ||
+      intentName === "fechas" ||
+      contienePalabraClave
+    ) {
+      const fechas = await obtenerFechas();
+      const respuesta =
+        fechas.length > 0
+          ? `📅 Estas son las fechas importantes encontradas en la página:\n\n${fechas.join(
+              "\n"
+            )}`
+          : "No se encontraron fechas en la página.";
+      res.json({ fulfillmentText: respuesta });
+    } else {
+      res.json({
+        fulfillmentText:
+          "Puedo ayudarte con las fechas importantes de la Universidad del Quindío. ¿Quieres que te las muestre?"
+      });
+    }
+  } catch (error) {
+    console.error("Error en el webhook:", error);
     res.json({
-      fulfillmentText: `Estas son las fechas encontradas en la página: ${fechas.join(", ")}`
+      fulfillmentText:
+        "Ocurrió un error procesando la solicitud del webhook. Intenta nuevamente."
     });
-  } else {
-    res.json({ fulfillmentText: "No entiendo tu solicitud." });
   }
 });
 
-// Render usa este puerto automáticamente
+// --- Endpoint de prueba ---
+app.get("/", (req, res) => {
+  res.send("✅ Webhook de la Universidad del Quindío activo y funcionando");
+});
+
+// --- Configuración del puerto (Render usa process.env.PORT) ---
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor webhook activo en puerto ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Servidor ejecutándose en el puerto ${PORT}`);
+});
