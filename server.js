@@ -37,7 +37,7 @@ async function obtenerFechas() {
 app.post("/webhook", async (req, res) => {
   const intentName = req.body.queryResult.intent.displayName;
 
-  if (intentName === "obtener_fechas_uniquindio") {
+ if ( intentName === "fechas_importantes" ||intentName === "fechas importantes" ||intentName === "fechas" ) {
     const fechas = await obtenerFechas();
     res.json({
       fulfillmentText: `Estas son las fechas encontradas en la página: ${fechas.join(", ")}`
