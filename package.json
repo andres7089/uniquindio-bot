@@ -1,9 +1,8 @@
 {
   "name": "uniquindio-bot",
   "version": "1.1.0",
-  "description": "Webhook para Dialogflow que obtiene fechas de la Universidad del Quindío",
-  "main": "server.js",
   "type": "module",
+  "main": "server.js",
   "dependencies": {
     "axios": "^1.7.0",
     "cheerio": "^1.0.0-rc.12",
