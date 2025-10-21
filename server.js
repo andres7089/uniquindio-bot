@@ -6,17 +6,15 @@ const app = express();
 app.use(express.json());
 
 // --------------------------------------------------------------------
-// 🧠 Función para obtener fechas académicas desde la web de Uniquindío
+// 🔍 FUNCION PRINCIPAL PARA EXTRAER FECHAS DE LA PÁGINA UNIQINDÍO
 // --------------------------------------------------------------------
 async function obtenerFechas() {
   const url =
     "https://www.uniquindio.edu.co/actividades-por-subcategoria/4/consulta/";
-
   const headers = {
     "User-Agent":
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   };
-
   const anioActual = new Date().getFullYear();
   console.log(`🌐 Obteniendo fechas académicas del año ${anioActual}...`);
 
@@ -24,7 +22,6 @@ async function obtenerFechas() {
     const { data } = await axios.get(url, { headers, timeout: 15000 });
     const $ = cheerio.load(data);
 
-    // Extraer texto visible y eliminar ruido
     const textos = [];
     $("body *")
       .contents()
@@ -46,8 +43,6 @@ async function obtenerFechas() {
     let i = 0;
     while (i < textos.length) {
       const linea = textos[i];
-
-      // Si no tiene números, probablemente sea el título
       if (!/\d/.test(linea) && linea.length > 5) {
         const titulo = linea;
         const fechas = [];
@@ -64,7 +59,6 @@ async function obtenerFechas() {
       }
     }
 
-    // Agrupar por periodo
     const agrupadas = {};
     for (const act of actividades) {
       const { titulo, fechas } = act;
@@ -76,7 +70,6 @@ async function obtenerFechas() {
       }
     }
 
-    // Filtrar solo año actual
     const filtradas = Object.fromEntries(
       Object.entries(agrupadas).filter(([periodo, acts]) =>
         acts.some(
@@ -87,7 +80,6 @@ async function obtenerFechas() {
       )
     );
 
-    // Construir mensaje
     let resultado = `📅 *Fechas Académicas ${anioActual} (Modalidad Presencial)*\n\n`;
     for (const periodo of Object.keys(filtradas).sort()) {
       resultado += `📘 *Periodo ${periodo}*\n`;
@@ -109,7 +101,7 @@ async function obtenerFechas() {
 }
 
 // --------------------------------------------------------------------
-// 🪄 Webhook principal
+// 🤖 WEBHOOK PRINCIPAL
 // --------------------------------------------------------------------
 app.post("/webhook", async (req, res) => {
   try {
@@ -122,11 +114,16 @@ app.post("/webhook", async (req, res) => {
       req.body.message?.text?.toLowerCase() ||
       "";
 
-    console.log("Intent recibido:", intentName);
-    console.log("Texto del usuario:", userQuery);
+    const chatId =
+      req.body.originalDetectIntentRequest?.payload?.data?.callback_query
+        ?.from?.id ||
+      req.body.originalDetectIntentRequest?.payload?.data?.message?.chat?.id ||
+      null;
 
     const contienePalabraClave =
       userQuery.includes("fecha") || userQuery.includes("importante");
+
+    let respuesta;
 
     if (
       intentName === "fechas_importantes" ||
@@ -134,16 +131,33 @@ app.post("/webhook", async (req, res) => {
       intentName === "fechas" ||
       contienePalabraClave
     ) {
-      const respuesta = await obtenerFechas();
-      res.json({ fulfillmentText: respuesta });
+      respuesta = await obtenerFechas();
     } else {
-      res.json({
-        fulfillmentText:
-          "Puedo ayudarte con las fechas académicas importantes de la Universidad del Quindío. ¿Deseas verlas?",
+      respuesta =
+        "Puedo ayudarte con las fechas académicas importantes de la Universidad del Quindío. ¿Deseas verlas?";
+    }
+
+    // ---------------------------------------------
+    // 📤 Enviar mensaje directamente a Telegram
+    // ---------------------------------------------
+    if (chatId) {
+      const telegramToken = process.env.TELEGRAM_TOKEN; // debes poner tu token en Render
+      const telegramUrl = `https://api.telegram.org/bot${telegramToken}/sendMessage`;
+
+      await axios.post(telegramUrl, {
+        chat_id: chatId,
+        text: respuesta,
+        parse_mode: "Markdown",
       });
+
+      // Dialogflow también espera una respuesta JSON
+      res.json({ fulfillmentText: "Mensaje enviado a Telegram ✅" });
+    } else {
+      // Respuesta normal para pruebas directas
+      res.json({ fulfillmentText: respuesta });
     }
   } catch (error) {
-    console.error("Error en el webhook:", error);
+    console.error("Error en el webhook:", error.message);
     res.json({
       fulfillmentText:
         "Ocurrió un error procesando tu solicitud. Intenta nuevamente.",
@@ -152,13 +166,13 @@ app.post("/webhook", async (req, res) => {
 });
 
 // --------------------------------------------------------------------
-// 🔍 Endpoint raíz de prueba
+// 🚀 Endpoint raíz
 // --------------------------------------------------------------------
 app.get("/", (req, res) => {
-  res.send("✅ Webhook de la Universidad del Quindío activo y funcionando");
+  res.send("✅ Webhook de la Universidad del Quindío activo y conectado a Telegram");
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor ejecutándose en el puerto ${PORT}`);
-});
+app.listen(PORT, () =>
+  console.log(`🚀 Servidor ejecutándose en el puerto ${PORT}`)
+);
